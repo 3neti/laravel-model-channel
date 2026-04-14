@@ -5,6 +5,7 @@ namespace LBHurtado\ModelChannel\Tests;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use LBHurtado\ModelChannel\Tests\Models\User;
 use Orchestra\Testbench\TestCase as BaseTestCase;
+use Propaganistas\LaravelPhone\PhoneServiceProvider;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -23,6 +24,7 @@ abstract class TestCase extends BaseTestCase
     protected function getPackageProviders($app)
     {
         return [
+            PhoneServiceProvider::class,
             \LBHurtado\ModelChannel\ModelChannelServiceProvider::class,
         ];
     }
