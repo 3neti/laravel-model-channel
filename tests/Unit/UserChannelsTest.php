@@ -37,7 +37,7 @@ it('can detect channel presence', function () {
 
     expect($user->hasChannel(Channel::TELEGRAM))->toBeFalse();
 
-    $user->setChannel(Channel::TELEGRAM, 'sample-telegram-id');
+    $user->setChannel(Channel::TELEGRAM, '123456789');
 
     expect($user->hasChannel(Channel::TELEGRAM))->toBeTrue();
 });

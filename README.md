@@ -43,7 +43,7 @@ $user->hasWebhookChannel();
 ## Generic API
 
 ```php
-$user->setChannel('telegram', 'my-telegram-id');
+$user->setChannel('telegram', '123456789');
 $user->getChannel('telegram');
 $user->hasChannel('telegram');
 ```
@@ -65,7 +65,7 @@ $user->webhook;
 ```php
 User::findByMobile('09173011987');
 User::findByWebhook('https://example.com/webhook');
-User::findByChannel('telegram', 'my-telegram-id');
+User::findByChannel('telegram', '123456789');
 ```
 
 ## External package integration
