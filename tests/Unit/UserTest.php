@@ -5,7 +5,7 @@ use LBHurtado\ModelChannel\Tests\Models\User;
 it('has fillable properties', function () {
     $moneyIssuer = User::factory()->make();
 
-    expect($moneyIssuer->getFillable())->toBe(['name', 'email', 'password', 'mobile']);
+    expect($moneyIssuer->getFillable())->toBe(['name', 'email', 'password']);
 });
 
 it('has a factory', function () {

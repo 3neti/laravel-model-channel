@@ -8,42 +8,23 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use LBHurtado\ModelChannel\Contracts\ChannelsInterface;
+use LBHurtado\ModelChannel\Contracts\HasMobileChannel;
+use LBHurtado\ModelChannel\Contracts\HasWebhookChannel;
 use LBHurtado\ModelChannel\Database\Factories\UserFactory;
 use LBHurtado\ModelChannel\Traits\HasChannels;
 
-/**
- * Class User.
- *
- * @property int $id
- * @property string $name
- * @property string $email
- * @property Merchant $merchant
- *
- * @method int getKey()
- */
-class User extends Authenticatable implements ChannelsInterface
+class User extends Authenticatable implements ChannelsInterface, HasMobileChannel, HasWebhookChannel
 {
     use HasChannels;
     use HasFactory;
     use Notifiable;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array
-     */
     protected $fillable = [
         'name',
         'email',
         'password',
-        'mobile',
     ];
 
-    /**
-     * The attributes that should be hidden for arrays.
-     *
-     * @var array
-     */
     protected $hidden = [
         'password',
         'remember_token',

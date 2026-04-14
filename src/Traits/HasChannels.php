@@ -6,6 +6,7 @@ use Exception;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\Validator;
+use InvalidArgumentException;
 use LBHurtado\ModelChannel\Enums\Channel;
 
 trait HasChannels
@@ -16,10 +17,16 @@ trait HasChannels
             ->latest('id');
     }
 
-    public function setChannel(string|Channel $name, ?string $value): self
+    public function getChannel(string|Channel $name): ?string
     {
-        // Convert Channels enum to its string value if provided
-        $name = $name instanceof Channel ? $name->value : $name;
+        $name = $this->normalizeChannelName($name);
+
+        return $this->getChannelAttribute($name);
+    }
+
+    public function setChannel(string|Channel $name, ?string $value): static
+    {
+        $name = $this->normalizeChannelName($name);
 
         if (is_null($value) || $value === '') {
             $this->deleteChannel($name);
@@ -28,34 +35,23 @@ trait HasChannels
         }
 
         if (! $this->isValidChannel($name, $value)) {
-            throw new Exception('Channel name is not valid');
+            throw new Exception(sprintf('Channel [%s] is not valid.', $name));
         }
-
-        //        if (! $this->isValidChannel($name, $value)) {
-        //            throw new Exception('Channel name is not valid');
-        //        }
 
         return $this->forceSetChannel($name, $value);
     }
 
-    public function forceSetChannel(string|Channel $name, string $value): self
+    public function forceSetChannel(string|Channel $name, string $value): static
     {
-        // Convert Channels enum to string if needed
-        $name = $name instanceof Channel ? $name->value : $name;
+        $name = $this->normalizeChannelName($name);
+        $value = $this->normalizeChannelValue($name, $value);
 
-        // Normalize mobile numbers to E.164 format without "+"
-        if ($name === 'mobile') {
-            $value = ltrim(phone($value, 'PH')->formatE164(), '+');
-        }
-
-        // Check if existing record already matches the intended value
         $existing = $this->channels()->where('name', $name)->latest()->first();
 
         if ($existing && $existing->value === $value) {
-            return $this; // No need to insert duplicate
+            return $this;
         }
 
-        // Delete any existing record for this channel name before inserting new one
         $this->channels()->where('name', $name)->delete();
 
         $this->channels()->create([
@@ -63,50 +59,115 @@ trait HasChannels
             'value' => $value,
         ]);
 
+        if ($this->relationLoaded('channels')) {
+            $this->unsetRelation('channels');
+        }
+
         return $this;
     }
 
-    //    public function forceSetChannel(string|Channel $name, string|null $value): self
-    //    {
-    //        // Convert Channels enum to its string value if provided
-    //        $name = $name instanceof Channel ? $name->value : $name;
-    //
-    //        // Normalize phone numbers to E.164 format without "+"
-    //        if ($name === 'mobile') {
-    //            $value = ltrim(phone($value, 'PH')->formatE164(), '+');
-    //        }
-    //
-    //        $this->channels()->create([
-    //            'name' => $name,
-    //            'value' => $value,
-    //        ]);
-    //
-    //        return $this;
-    //    }
+    public function hasChannel(string|Channel $name): bool
+    {
+        return ! is_null($this->getChannel($name));
+    }
 
     protected function deleteChannel(string|Channel $name): void
     {
-        $name = $name instanceof Channel ? $name->value : $name;
+        $name = $this->normalizeChannelName($name);
 
-        $this->channels()
-            ->where('name', $name)
-            ->delete();
+        $this->channels()->where('name', $name)->delete();
+
+        if ($this->relationLoaded('channels')) {
+            $this->unsetRelation('channels');
+        }
     }
 
     public function isValidChannel(string|Channel $name, ?string $value = null): bool
     {
-        // Convert Channel enum to its string value if provided
         $channel = $name instanceof Channel ? $name : Channel::tryFrom($name);
 
-        // Ensure the channel is valid (exists in the Channel enum)
         if (! $channel instanceof Channel) {
             return false;
         }
 
-        // Perform validation using channel-specific rules
         $validator = Validator::make(['value' => $value], ['value' => $channel->rules()]);
 
         return ! $validator->fails();
+    }
+
+    public function getMobileChannel(): ?string
+    {
+        return $this->getChannel(Channel::MOBILE);
+    }
+
+    public function setMobileChannel(?string $mobile): static
+    {
+        return $this->setChannel(Channel::MOBILE, $mobile);
+    }
+
+    public function hasMobileChannel(): bool
+    {
+        return $this->hasChannel(Channel::MOBILE);
+    }
+
+    public function getWebhookChannel(): ?string
+    {
+        return $this->getChannel(Channel::WEBHOOK);
+    }
+
+    public function setWebhookChannel(?string $webhook): static
+    {
+        return $this->setChannel(Channel::WEBHOOK, $webhook);
+    }
+
+    public function hasWebhookChannel(): bool
+    {
+        return $this->hasChannel(Channel::WEBHOOK);
+    }
+
+    public function getTelegramChannel(): ?string
+    {
+        return $this->getChannel(Channel::TELEGRAM);
+    }
+
+    public function setTelegramChannel(?string $telegram): static
+    {
+        return $this->setChannel(Channel::TELEGRAM, $telegram);
+    }
+
+    public function hasTelegramChannel(): bool
+    {
+        return $this->hasChannel(Channel::TELEGRAM);
+    }
+
+    public function getWhatsappChannel(): ?string
+    {
+        return $this->getChannel(Channel::WHATSAPP);
+    }
+
+    public function setWhatsappChannel(?string $whatsapp): static
+    {
+        return $this->setChannel(Channel::WHATSAPP, $whatsapp);
+    }
+
+    public function hasWhatsappChannel(): bool
+    {
+        return $this->hasChannel(Channel::WHATSAPP);
+    }
+
+    public function getViberChannel(): ?string
+    {
+        return $this->getChannel(Channel::VIBER);
+    }
+
+    public function setViberChannel(?string $viber): static
+    {
+        return $this->setChannel(Channel::VIBER, $viber);
+    }
+
+    public function hasViberChannel(): bool
+    {
+        return $this->hasChannel(Channel::VIBER);
     }
 
     protected function getChannelTableName(): string
@@ -128,45 +189,34 @@ trait HasChannels
 
     public function __get($key)
     {
-        // Skip interception for excluded channels — delegate to Eloquent
         if ($this->isExcludedChannel($key)) {
             return parent::__get($key);
         }
 
-        // Check if the key matches any Channel enum value
         if ($channel = $this->getChannelFromEnum($key)) {
-            return $this->getChannelAttribute($channel->value);
+            return $this->getChannel($channel);
         }
 
-        // Delegate to the parent method for non-magic properties
         return parent::__get($key);
     }
 
     public function __set($key, $value)
     {
-        // Skip interception for excluded channels — delegate to Eloquent
         if ($this->isExcludedChannel($key)) {
             parent::__set($key, $value);
 
             return;
         }
 
-        // Check if the key matches any Channel enum value
         if ($channel = $this->getChannelFromEnum($key)) {
-
-            $this->setChannelAttribute($channel->value, $value);
+            $this->setChannel($channel, $value);
 
             return;
         }
 
-        // Delegate to the parent method for non-magic properties
         parent::__set($key, $value);
     }
 
-    /**
-     * Check if a channel key is excluded from __get/__set interception.
-     * Models can define: protected array $excludedChannels = ['mobile'];
-     */
     protected function isExcludedChannel(string $key): bool
     {
         return property_exists($this, 'excludedChannels')
@@ -175,10 +225,9 @@ trait HasChannels
 
     protected function getChannelAttribute(string $name): ?string
     {
-        // Check if channels are already loaded to avoid querying the database
         $channel = $this->relationLoaded('channels')
-            ? $this->channels->firstWhere('name', $name) // Searches in the loaded relationship (collection)
-            : $this->channels()->where('name', $name)->first(); // Falls back to a database query if not loaded
+            ? $this->channels->firstWhere('name', $name)
+            : $this->channels()->where('name', $name)->first();
 
         return $channel?->value;
     }
@@ -190,22 +239,37 @@ trait HasChannels
 
     private function getChannelFromEnum(string $key): ?Channel
     {
-        // Attempt to match the key to any value in the Channels enum
         foreach (Channel::cases() as $channel) {
             if ($channel->value === $key) {
                 return $channel;
             }
         }
 
-        return null; // No match
+        return null;
     }
 
-    public static function findByChannel(string $channelName, string $channelValue): ?self
+    protected function normalizeChannelName(string|Channel $name): string
     {
+        return $name instanceof Channel ? $name->value : $name;
+    }
+
+    protected function normalizeChannelValue(string $name, string $value): string
+    {
+        if ($name === Channel::MOBILE->value) {
+            return ltrim(phone($value, 'PH')->formatE164(), '+');
+        }
+
+        return $value;
+    }
+
+    public static function findByChannel(string|Channel $channelName, string $channelValue): ?static
+    {
+        $channelName = $channelName instanceof Channel ? $channelName->value : $channelName;
+
         return static::whereHas('channels', function (Builder $q) use ($channelName, $channelValue) {
             $q->where('name', $channelName);
 
-            if ($channelName === 'mobile') {
+            if ($channelName === Channel::MOBILE->value) {
                 try {
                     $e164 = ltrim(phone($channelValue, 'PH')->formatE164(), '+');
                     $national = preg_replace('/\D+/', '', $channelValue);
@@ -218,7 +282,6 @@ trait HasChannels
                             ->orWhere('value', 'LIKE', "%{$dialable}%");
                     });
                 } catch (\Throwable $e) {
-                    // nothing will match
                     $q->whereRaw('0 = 1');
                 }
             } else {
@@ -227,58 +290,28 @@ trait HasChannels
         })->first();
     }
 
-    //    public static function findByChannel(string $channelName, string $channelValue): ?static
-    //    {
-    //        return static::whereHas('channels', function ($query) use ($channelName, $channelValue) {
-    //            if ($channelName === 'mobile') {
-    //                try {
-    //                    // Normalize the phone number to E.164 without "+"
-    //                    $phoneE164WithoutPlus = ltrim(phone($channelValue, 'PH')->formatE164(), '+');
-    //
-    //                    // Optional fallback formats
-    //                    $phone_normalized = preg_replace('/[^0-9]/', '', $channelValue); // Strip non-numeric
-    //                    $phone_national = str_replace(' ', '', phone($channelValue, 'PH')->formatForMobileDialingInCountry('PH'));
-    //
-    //                    // Additional fallback: remove leading '0's for LIKE
-    //                    $phone_normalized_like_fallback = ltrim($phone_normalized, '0');
-    //                } catch (\Exception $e) {
-    //                    // Return no result if the phone number cannot be normalized
-    //                    return $query->whereRaw('1 = 0'); // No match
-    //                }
-    //                // Match the normalized E.164 format or fallback formats
-    //                $query->where('name', $channelName)
-    //                    ->where(function ($subQuery) use ($phoneE164WithoutPlus, $phone_normalized, $phone_national, $phone_normalized_like_fallback) {
-    //                        $subQuery->where('value',  '=',  $phoneE164WithoutPlus) // Strict match for E.164
-    //                        ->orWhere('value', 'LIKE', '%' . $phone_normalized . '%')    // Relaxed match for normalized
-    //                        ->orWhere('value', 'LIKE', '%' . $phone_national . '%')     // Relaxed match for national
-    //                        ->orWhere('value', 'LIKE', '%' . $phone_normalized_like_fallback . '%'); // Fallback with leading "0"s removed
-    //                    });
-    //                dd($query->first());
-    //            } else {
-    //                // Default matching behavior for non-mobile channels
-    //                $query->where('name', $channelName)->where('value', $channelValue);
-    //            }
-    //        })->first();
-    //    }
+    public static function findByMobile(string $mobile): ?static
+    {
+        return static::findByChannel(Channel::MOBILE, $mobile);
+    }
+
+    public static function findByWebhook(string $webhook): ?static
+    {
+        return static::findByChannel(Channel::WEBHOOK, $webhook);
+    }
 
     public static function __callStatic($method, $parameters)
     {
-        // Check if the method starts with "findBy"
         if (str_starts_with($method, 'findBy')) {
-            // Dynamically determine the channel name
             $channelName = strtolower(str_replace('findBy', '', $method));
 
-            // Ensure there are at least two parameters: the channel value
             if (! isset($parameters[0])) {
-                throw new \InvalidArgumentException('Channel value is required');
+                throw new InvalidArgumentException('Channel value is required');
             }
-            $channelValue = $parameters[0];
 
-            // Use the existing findByChannel method to find the model
-            return static::findByChannel($channelName, $channelValue);
+            return static::findByChannel($channelName, $parameters[0]);
         }
 
-        // If the method does not match "findBy", pass it to the parent (if necessary)
         return parent::__callStatic($method, $parameters);
     }
 }

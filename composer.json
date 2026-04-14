@@ -1,6 +1,6 @@
 {
     "name": "3neti/laravel-model-channel",
-    "description": "A package to enable assigning channels to Eloquent Models",
+    "description": "A package to enable assigning communication channels to Eloquent models.",
     "type": "library",
     "license": "proprietary",
     "authors": [
@@ -28,10 +28,14 @@
         }
     },
     "require": {
+        "php": "^8.2",
+        "illuminate/contracts": "^11.0|^12.0|^13.0",
+        "illuminate/database": "^11.0|^12.0|^13.0",
+        "illuminate/support": "^11.0|^12.0|^13.0",
         "propaganistas/laravel-phone": "^6.0"
     },
     "require-dev": {
-        "orchestra/testbench": "^10.3",
+        "orchestra/testbench": "^9.0|^10.0|^11.0",
         "pestphp/pest": "^3.8"
     },
     "scripts": {
