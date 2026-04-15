@@ -3,6 +3,7 @@
 namespace LBHurtado\ModelChannel\Traits;
 
 use Exception;
+use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Facades\Validator;
@@ -13,7 +14,7 @@ trait HasChannels
 {
     public function channels(): MorphMany
     {
-        return $this->morphMany($this->getChannelModelClassName(), 'model', 'model_type', $this->getModelKeyColumnName())
+        return $this->morphMany($this->getChannelModelClassName(), 'model')
             ->latest('id');
     }
 
@@ -47,10 +48,14 @@ trait HasChannels
         $value = $this->normalizeChannelValue($name, $value);
 
         $existing = $this->channels()->where('name', $name)->latest()->first();
+        $oldValue = $existing?->value;
 
         if ($existing && $existing->value === $value) {
             return $this;
         }
+
+        $this->forgetChannelLookupCache($name, $oldValue);
+        $this->forgetChannelLookupCache($name, $value);
 
         $this->channels()->where('name', $name)->delete();
 
@@ -74,6 +79,12 @@ trait HasChannels
     protected function deleteChannel(string|Channel $name): void
     {
         $name = $this->normalizeChannelName($name);
+
+        $existing = $this->channels()->where('name', $name)->latest()->first();
+
+        if ($existing) {
+            $this->forgetChannelLookupCache($name, $existing->value);
+        }
 
         $this->channels()->where('name', $name)->delete();
 
@@ -177,14 +188,9 @@ trait HasChannels
         return (new $modelClass)->getTable();
     }
 
-    protected function getModelKeyColumnName(): string
-    {
-        return config('model-channel.model_primary_key_attribute') ?? 'model_id';
-    }
-
     protected function getChannelModelClassName(): string
     {
-        return config('model-channel.channel_model') ?? \LBHurtado\ModelChannel\Models\Channel::class;
+        return config('model-channel.model', \LBHurtado\ModelChannel\Models\Channel::class);
     }
 
     public function __get($key)
@@ -232,11 +238,6 @@ trait HasChannels
         return $channel?->value;
     }
 
-    protected function setChannelAttribute(string $name, ?string $value): void
-    {
-        $this->setChannel($name, $value);
-    }
-
     private function getChannelFromEnum(string $key): ?Channel
     {
         foreach (Channel::cases() as $channel) {
@@ -262,10 +263,74 @@ trait HasChannels
         return $value;
     }
 
-    public static function findByChannel(string|Channel $channelName, string $channelValue): ?static
+    protected static function normalizeLookupValue(string $channel, string $value): string
     {
-        $channelName = $channelName instanceof Channel ? $channelName->value : $channelName;
+        if ($channel === Channel::MOBILE->value) {
+            return ltrim(phone($value, 'PH')->formatE164(), '+');
+        }
 
+        return $value;
+    }
+
+    protected static function channelCacheEnabled(): bool
+    {
+        return (bool) config('model-channel.cache.enabled', false);
+    }
+
+    protected static function channelCacheStore(): CacheRepository
+    {
+        $store = config('model-channel.cache.store');
+
+        return $store
+            ? cache()->store($store)
+            : cache();
+    }
+
+    protected static function channelCacheTtl(): int
+    {
+        return (int) config('model-channel.cache.ttl', 600);
+    }
+
+    protected static function channelCachePrefix(): string
+    {
+        return (string) config('model-channel.cache.prefix', 'model-channel');
+    }
+
+    protected static function channelCacheNullMarker(): string
+    {
+        return (string) config('model-channel.cache.null_marker', '__model_channel_null__');
+    }
+
+    protected static function isCacheableChannel(string $channel): bool
+    {
+        return in_array($channel, (array) config('model-channel.cache.channels', []), true);
+    }
+
+    protected static function makeChannelCacheKey(string $modelClass, string $channel, string $value): string
+    {
+        return implode(':', [
+            static::channelCachePrefix(),
+            'lookup',
+            str_replace('\\', '.', $modelClass),
+            $channel,
+            sha1($value),
+        ]);
+    }
+
+    protected function forgetChannelLookupCache(string $channel, ?string $value): void
+    {
+        if (! static::channelCacheEnabled() || ! static::isCacheableChannel($channel) || blank($value)) {
+            return;
+        }
+
+        $normalized = static::normalizeLookupValue($channel, $value);
+        $key = static::makeChannelCacheKey(static::class, $channel, $normalized);
+
+        static::channelCacheStore()->forget($key);
+    }
+
+    protected static function performChannelLookup(string $channelName, string $channelValue): ?static
+    {
         return static::whereHas('channels', function (Builder $q) use ($channelName, $channelValue) {
             $q->where('name', $channelName);
 
@@ -273,11 +338,10 @@ trait HasChannels
                 try {
                     $e164 = ltrim(phone($channelValue, 'PH')->formatE164(), '+');
                     $national = preg_replace('/\D+/', '', $channelValue);
-                    $dialable = phone($channelValue, 'PH')->formatForMobileDialingInCountry('PH');
-                    $dialable = preg_replace('/\D+/', '', $dialable);
+                    $dialable = ltrim($national, '0');
 
-                    $q->where(function ($sub) use ($e164, $national, $dialable) {
-                        $sub->where('value', $e164)
+                    $q->where(function (Builder $subQuery) use ($e164, $national, $dialable) {
+                        $subQuery->where('value', '=', $e164)
                             ->orWhere('value', 'LIKE', "%{$national}%")
                             ->orWhere('value', 'LIKE', "%{$dialable}%");
                     });
@@ -288,6 +352,39 @@ trait HasChannels
                 $q->where('value', $channelValue);
             }
         })->first();
+    }
+
+    public static function findByChannel(string|Channel $channelName, string $channelValue): ?static
+    {
+        $channelName = $channelName instanceof Channel ? $channelName->value : $channelName;
+
+        if (! static::channelCacheEnabled() || ! static::isCacheableChannel($channelName)) {
+            return static::performChannelLookup($channelName, $channelValue);
+        }
+
+        $normalized = static::normalizeLookupValue($channelName, $channelValue);
+        $cacheKey = static::makeChannelCacheKey(static::class, $channelName, $normalized);
+        $cache = static::channelCacheStore();
+
+        $cached = $cache->get($cacheKey);
+
+        if ($cached === static::channelCacheNullMarker()) {
+            return null;
+        }
+
+        if ($cached) {
+            return static::query()->find($cached);
+        }
+
+        $model = static::performChannelLookup($channelName, $channelValue);
+
+        $cache->put(
+            $cacheKey,
+            $model?->getKey() ?? static::channelCacheNullMarker(),
+            static::channelCacheTtl()
+        );
+
+        return $model;
     }
 
     public static function findByMobile(string $mobile): ?static
