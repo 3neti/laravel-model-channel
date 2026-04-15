@@ -1,23 +1,47 @@
 # laravel-model-channel
 
-A schema-light Laravel capability package for attaching delivery and communication channels to Eloquent models through a polymorphic `channels` table.
+A schema-light Laravel capability package for attaching delivery and
+communication channels to Eloquent models through a polymorphic
+`channels` table.
 
 ## Why this package exists
 
-This package lets a model expose capabilities like mobile or webhook delivery without requiring host apps to add columns such as `users.mobile`.
+This package lets a model expose capabilities like mobile or webhook
+delivery without requiring host apps to add direct columns such as
+`users.mobile` or `users.webhook`.
 
-Channels are stored in the package-owned morph table.
+Channels are stored in the package-owned morph table, keeping your
+application schema clean and flexible.
+
+------------------------------------------------------------------------
 
 ## Installation
 
-```bash
+``` bash
 composer require 3neti/laravel-model-channel
 php artisan migrate
 ```
 
+------------------------------------------------------------------------
+
+## Supported Channel Types
+
+Out of the box, the package supports:
+
+-   `mobile` (normalized to E.164 without `+`)
+-   `webhook` (validated URL)
+-   `telegram` (numeric ID)
+-   `whatsapp` (phone-based)
+-   `viber` (phone-based)
+
+All channels are validated via enum-backed rules.
+
+------------------------------------------------------------------------
+
 ## Basic usage
 
-```php
+``` php
+use Illuminate\Database\Eloquent\Model;
 use LBHurtado\ModelChannel\Contracts\HasMobileChannel;
 use LBHurtado\ModelChannel\Contracts\HasWebhookChannel;
 use LBHurtado\ModelChannel\Traits\HasChannels;
@@ -28,62 +52,156 @@ class User extends Model implements HasMobileChannel, HasWebhookChannel
 }
 ```
 
-## Explicit API
+------------------------------------------------------------------------
 
-```php
-$user->setMobileChannel('09173011987');
-$user->getMobileChannel();
-$user->hasMobileChannel();
+## Explicit capability API
 
-$user->setWebhookChannel('https://example.com/webhook');
-$user->getWebhookChannel();
-$user->hasWebhookChannel();
+### Mobile
+
+``` php
+$user->setMobileChannel('09171234567');
+
+$user->getMobileChannel(); // 639171234567
+$user->hasMobileChannel(); // true
 ```
+
+Accepted formats:
+
+``` php
+$user->setMobileChannel('09171234567');
+$user->setMobileChannel('0917 123 4567');
+$user->setMobileChannel('639171234567');
+$user->setMobileChannel('+639171234567');
+$user->setMobileChannel('+63 (917) 123-4567');
+```
+
+All normalize to:
+
+``` php
+639171234567
+```
+
+------------------------------------------------------------------------
+
+### Webhook
+
+``` php
+$user->setWebhookChannel('https://example.com/webhook');
+
+$user->getWebhookChannel(); // https://example.com/webhook
+$user->hasWebhookChannel(); // true
+```
+
+------------------------------------------------------------------------
 
 ## Generic API
 
-```php
-$user->setChannel('telegram', '123456789');
-$user->getChannel('telegram');
-$user->hasChannel('telegram');
+``` php
+$user->setChannel('webhook', 'https://example.com/webhook');
+
+$user->getChannel('webhook');
+$user->hasChannel('webhook');
 ```
 
-## Magic properties
+Using enum:
 
-Magic access is still supported for backward compatibility.
+``` php
+use LBHurtado\ModelChannel\Enums\Channel;
 
-```php
-$user->mobile = '09173011987';
-$user->mobile; // 639173011987
-
-$user->webhook = 'https://example.com/webhook';
-$user->webhook;
+$user->setChannel(Channel::WEBHOOK, 'https://example.com/webhook');
 ```
+
+Delete a channel:
+
+``` php
+$user->setChannel(Channel::WEBHOOK, null);
+$user->setChannel(Channel::WEBHOOK, '');
+```
+
+------------------------------------------------------------------------
+
+## Magic properties (backward compatibility)
+
+``` php
+$user->mobile = '09171234567';
+
+$user->mobile;              // 639171234567
+$user->getMobileChannel();  // 639171234567
+```
+
+------------------------------------------------------------------------
+
+## Additional helpers
+
+### Telegram
+
+``` php
+$user->setTelegramChannel('123456789');
+$user->getTelegramChannel();
+$user->hasTelegramChannel();
+```
+
+### WhatsApp
+
+``` php
+$user->setWhatsappChannel('09171234567');
+$user->getWhatsappChannel();
+$user->hasWhatsappChannel();
+```
+
+### Viber
+
+``` php
+$user->setViberChannel('09171234567');
+$user->getViberChannel();
+$user->hasViberChannel();
+```
+
+------------------------------------------------------------------------
 
 ## Finders
 
-```php
-User::findByMobile('09173011987');
+``` php
+User::findByMobile('09171234567');
 User::findByWebhook('https://example.com/webhook');
 User::findByChannel('telegram', '123456789');
 ```
 
+Mobile finder supports multiple formats.
+
+------------------------------------------------------------------------
+
+## Validation
+
+``` php
+$user->isValidChannel(Channel::WEBHOOK, 'https://example.com/webhook'); // true
+$user->isValidChannel(Channel::WEBHOOK, 'not-a-url'); // false
+```
+
+Invalid values throw:
+
+``` php
+$user->setChannel('email', 'test@example.com'); // throws
+$user->setWebhookChannel('invalid');            // throws
+```
+
+------------------------------------------------------------------------
+
 ## External package integration
 
-External packages can typehint a capability contract instead of assuming a host column exists.
-
-```php
+``` php
 use LBHurtado\ModelChannel\Contracts\HasMobileChannel;
 
-function sendOtp(HasMobileChannel $user): void
+function sendOtp(HasMobileChannel $user)
 {
     $mobile = $user->getMobileChannel();
-
-    // ...
 }
 ```
 
+------------------------------------------------------------------------
+
 ## Storage model
 
-This package does not require direct schema changes on your host model tables.
-All channel data is stored in the package's polymorphic `channels` table.
+No schema changes required.
+
+All data is stored in the polymorphic `channels` table.
